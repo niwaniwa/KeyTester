@@ -24,7 +24,7 @@ const (
 	DebugLogPrefix        = "[DEBUG]"
 	PwmPin                = 13
 	MosPin                = 17
-	SwPin                 = 16
+	SwPin                 = 20
 	VID            uint16 = 0x054C // SONY
 	PID            uint16 = 0x06C1 // RC-S380
 	Debug                 = true
@@ -57,7 +57,7 @@ func initialize() {
 	managePWMPin = rpio.Pin(PwmPin) // SEIGYO OUT PUT PIN
 	managePWMPin.Mode(rpio.Pwm)
 	managePWMPin.Freq(50 * 100)
-	managePWMPin.DutyCycle(0, 100)
+	managePWMPin.DutyCycle(0, 360)
 	managePWMPin.Low()
 	fmt.Println("-: -: END Servo setup")
 
@@ -87,7 +87,8 @@ func OpenKey() {
 	i := 0
 	for {
 		i++
-		managePWMPin.DutyCycle(uint32(i), 100)
+		managePWMPin.DutyCycle(uint32(i), 360)
+		fmt.Println("i " + strconv.Itoa(i))
 		time.Sleep(100 * time.Millisecond)
 		if manageSwPin.Read() == 1 {
 			fmt.Println("-: -: end process " + strconv.Itoa(i))
