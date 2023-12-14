@@ -45,11 +45,11 @@ func initialize() {
 	_ = os.MkdirAll("data", 0755)
 
 	fmt.Println("-: -: Servo setup...")
-	//err := rpio.Open()
-	//if err != nil {
-	//	fmt.Println(err)
-	//	os.Exit(1)
-	//}
+	err := rpio.Open()
+	if err != nil {
+		fmt.Println(err)
+		os.Exit(1)
+	}
 
 	//manageMosPin = rpio.Pin(MosPin) // MOS SEIGYO OUT PUT PIN
 	//manageMosPin.Output()
