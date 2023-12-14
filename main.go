@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"github.com/bamchoh/pasori"
+	"github.com/stianeikeland/go-rpio/v4"
 	"log"
 	"os"
 	"time"
@@ -23,7 +24,7 @@ const (
 	DebugLogPrefix        = "[DEBUG]"
 	PwmPin                = 13
 	MosPin                = 17
-	SwPin                 = 18
+	SwPin                 = 16
 	VID            uint16 = 0x054C // SONY
 	PID            uint16 = 0x06C1 // RC-S380
 	Debug                 = true
@@ -67,9 +68,9 @@ func initialize() {
 		os.Exit(1)
 	}
 
-	manageMosPin = rpio.Pin(MosPin) // MOS SEIGYO OUT PUT PIN
-	manageMosPin.Output()
-	manageMosPin.Low()
+	//manageMosPin = rpio.Pin(MosPin) // MOS SEIGYO OUT PUT PIN
+	//manageMosPin.Output()
+	//manageMosPin.Low()
 	managePWMPin = rpio.Pin(PwmPin) // SEIGYO OUT PUT PIN
 	managePWMPin.Mode(rpio.Pwm)
 	managePWMPin.Freq(50 * 100)
@@ -92,15 +93,7 @@ func initialize() {
 
 func OpenKey() {
 	lock = true
-	manageMosPin.High()
 	managePWMPin.High()
-
-	time.Sleep(500 * time.Millisecond)
-
-	for i := 1; i <= 60; i++ {
-		managePWMPin.DutyCycle(uint32(i), 100)
-		time.Sleep(10 * time.Millisecond)
-	}
 
 	go func() {
 		time.Sleep(1000 * time.Millisecond)
@@ -108,6 +101,16 @@ func OpenKey() {
 		manageMosPin.Low()
 	}()
 	isOpenKey = true
+	i := 0
+	for {
+		i++
+		managePWMPin.DutyCycle(uint32(i), 100)
+		time.Sleep(10 * time.Millisecond)
+		if manageSwPin.Read() == 1 {
+			fmt.Println("-: -: end process")
+			break
+		}
+	}
 
 }
 
