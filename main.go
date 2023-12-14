@@ -2,10 +2,10 @@ package main
 
 import (
 	"fmt"
-	"github.com/bamchoh/pasori"
 	"github.com/stianeikeland/go-rpio/v4"
 	"log"
 	"os"
+	"strconv"
 	"time"
 )
 
@@ -34,24 +34,7 @@ func main() {
 	log.Printf("%s /////// START OPEN KEY PROCESS ///////\n", DebugLogPrefix)
 
 	initialize()
-
-	for {
-		// sudoしないと動かないので注意
-		idm, err := pasori.GetID(VID, PID)
-		if err != nil {
-			continue
-		}
-
-		log.Println(idm)
-
-		if isOpenKey {
-			CloseKey()
-		} else {
-			OpenKey()
-		}
-
-		time.Sleep(2000 * time.Millisecond)
-	}
+	OpenKey()
 }
 
 func initialize() {
@@ -62,11 +45,11 @@ func initialize() {
 	_ = os.MkdirAll("data", 0755)
 
 	fmt.Println("-: -: Servo setup...")
-	err := rpio.Open()
-	if err != nil {
-		fmt.Println(err)
-		os.Exit(1)
-	}
+	//err := rpio.Open()
+	//if err != nil {
+	//	fmt.Println(err)
+	//	os.Exit(1)
+	//}
 
 	//manageMosPin = rpio.Pin(MosPin) // MOS SEIGYO OUT PUT PIN
 	//manageMosPin.Output()
@@ -96,7 +79,7 @@ func OpenKey() {
 	managePWMPin.High()
 
 	go func() {
-		time.Sleep(1000 * time.Millisecond)
+		time.Sleep(5000 * time.Millisecond)
 		managePWMPin.Low()
 		manageMosPin.Low()
 	}()
@@ -105,9 +88,9 @@ func OpenKey() {
 	for {
 		i++
 		managePWMPin.DutyCycle(uint32(i), 100)
-		time.Sleep(10 * time.Millisecond)
+		time.Sleep(100 * time.Millisecond)
 		if manageSwPin.Read() == 1 {
-			fmt.Println("-: -: end process")
+			fmt.Println("-: -: end process " + strconv.Itoa(i))
 			break
 		}
 	}
