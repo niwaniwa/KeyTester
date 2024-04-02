@@ -2,47 +2,38 @@ package main
 
 import (
 	"fmt"
-	"github.com/stianeikeland/go-rpio/v4"
 	"log"
 	"os"
-	"strconv"
 	"time"
+
+	"github.com/stianeikeland/go-rpio/v4"
 )
 
 var (
 	managePWMPin    rpio.Pin
-	manageMosPin    rpio.Pin
 	manageSwPin     rpio.Pin
-	isOpenKey       bool
-	lock            bool   = false
-	isRegister      bool   = false
-	isCloseProgress bool   = false
-	tempName        string = ""
+	manageSwDoorPin rpio.Pin
+	position        int  = StopPosition
+	motorRunning    bool = false
+	motorStartTime  time.Time
 )
 
 const (
-	DebugLogPrefix        = "[DEBUG]"
-	PwmPin                = 13
-	MosPin                = 17
-	SwPin                 = 20
-	VID            uint16 = 0x054C // SONY
-	PID            uint16 = 0x06C1 // RC-S380
-	Debug                 = true
+	DebugLogPrefix   = "[DEBUG]"
+	PwmPin           = 13
+	SwPin            = 21
+	SwDoorPin        = 20
+	StopPosition     = 1520 // サーボモーターを停止させるPWMパルス幅(マイクロ秒)
+	ForwardPosition  = 800  // サーボモーターを正転させるPWMパルス幅(マイクロ秒)
+	ReversePosition  = 2000 // サーボモーターを反転させるPWMパルス幅(マイクロ秒)
+	IgnoreSwitchTime = 500  // スイッチ判定を無視する時間 (ミリ秒)
+	timeout          = 1500 // 応答がなかった場合にタイムアウトして処理を終了する時間 (ミリ秒)
+	Low              = 0
+	High             = 1
 )
 
 func main() {
 	log.Printf("%s /////// START OPEN KEY PROCESS ///////\n", DebugLogPrefix)
-
-	initialize()
-	OpenKey()
-}
-
-func initialize() {
-	log.Printf("%s -: Initializing -----\n", DebugLogPrefix)
-
-	////////////////// SERVO
-
-	_ = os.MkdirAll("data", 0755)
 
 	fmt.Println("-: -: Servo setup...")
 	err := rpio.Open()
@@ -51,65 +42,127 @@ func initialize() {
 		os.Exit(1)
 	}
 
-	//manageMosPin = rpio.Pin(MosPin) // MOS SEIGYO OUT PUT PIN
-	//manageMosPin.Output()
-	//manageMosPin.Low()
 	managePWMPin = rpio.Pin(PwmPin) // SEIGYO OUT PUT PIN
 	managePWMPin.Mode(rpio.Pwm)
-	managePWMPin.Freq(50 * 100)
-	managePWMPin.DutyCycle(0, 360)
-	managePWMPin.Low()
-	fmt.Println("-: -: END Servo setup")
+	managePWMPin.Freq(50 * 1000) // 50 Hz * DutyCycle (set servo)
+	managePWMPin.DutyCycle(0, 1000)
+	managePWMPin.High()
 
-	////////////////// SWITCH
-	fmt.Println("-: -: switch setup...")
-
+	// 歯車側
 	manageSwPin = rpio.Pin(SwPin)
 	manageSwPin.Input()
 	manageSwPin.PullUp()
-	//manageSwPin.Detect(rpio.FallEdge)
 
-	////////////////// PASORI
-	fmt.Println("-: -: IDM Read setup...")
+	// ドア側
+	manageSwDoorPin = rpio.Pin(SwDoorPin)
+	manageSwDoorPin.Input()
+	manageSwDoorPin.PullUp()
 
-}
+	fmt.Println("-: -: end setup...")
 
-func OpenKey() {
-	lock = true
-	managePWMPin.High()
-
-	go func() {
-		time.Sleep(5000 * time.Millisecond)
-		managePWMPin.Low()
-		manageMosPin.Low()
-	}()
-	isOpenKey = true
-	i := 0
-	for {
-		i++
-		managePWMPin.DutyCycle(uint32(i), 360)
-		fmt.Println("i " + strconv.Itoa(i))
-		time.Sleep(100 * time.Millisecond)
-		if manageSwPin.Read() == 1 {
-			fmt.Println("-: -: end process " + strconv.Itoa(i))
-			break
+	if len(os.Args) >= 2 {
+		if os.Args[1] == "check" {
+			for {
+				if manageSwPin.Read() == rpio.Low {
+					fmt.Println("sw pin push")
+				}
+				if manageSwDoorPin.Read() == rpio.Low {
+					fmt.Println("sw door pin push")
+				}
+			}
 		}
 	}
 
+	youyou()
+
+	// // サーボモーターを制御
+	// SetServo(managePWMPin, 2200)
+	// time.Sleep(300 * time.Millisecond)
+	// // SetServo(managePWMPin, 1700)
+	// for {
+	// 	if manageSwPin.Read() != 1 {
+	// 		SetServo(managePWMPin, 0)
+	// 		break
+	// 	}
+	// }
+
+	// fmt.Println("Done 1")
+	// SetServo(managePWMPin, 0)
+	// time.Sleep(2500 * time.Millisecond)
+	// SetServo(managePWMPin, 800)
+
+	// // time.Sleep(300 * time.Millisecond)
+	// SetServo(managePWMPin, 1300)
+	// for {
+	// 	if manageSwPin.Read() != 1 {
+	// 		break
+	// 	}
+	// }
+	// fmt.Println("Done 2")
+
+	// SetServo(managePWMPin, 0)
 }
 
-func CloseKey() {
-	manageMosPin.High()
-	managePWMPin.High()
-	time.Sleep(500 * time.Millisecond)
-	for i := 1; i <= 60; i++ {
-		managePWMPin.DutyCycle(uint32(50-i), 100)
-		time.Sleep(10 * time.Millisecond)
+// 指定したパルス幅でサーボモーターを制御
+func SetServo(pin rpio.Pin, pulseWidthMicroSeconds float64) {
+	// PWM周期（20ms）のうち、Highにすべき時間を計算
+	pulseWidthFraction := pulseWidthMicroSeconds / 20000
+	dutyCycle := uint32(pulseWidthFraction * 1000) // 分解能1000で計算
+
+	pin.DutyCycle(dutyCycle, 1000)
+}
+
+func youyou() {
+	fmt.Print("Enter command (f: forward, r: reverse, s: stop, e: exit): ")
+	var command rune
+	_, err := fmt.Scanf("%c\n", &command)
+	if err != nil {
+		fmt.Println("Error reading command:", err)
+		youyou()
 	}
-	go func() {
-		time.Sleep(1000 * time.Millisecond)
-		managePWMPin.Low()
-		manageMosPin.Low()
-	}()
-	isOpenKey = false
+
+	switch command {
+	case 'f', 'r':
+		if !motorRunning || time.Since(motorStartTime) > IgnoreSwitchTime*time.Millisecond {
+			if command == 'f' {
+				position = ForwardPosition
+			} else {
+				position = ReversePosition
+			}
+			motorStartTime = time.Now()
+			motorRunning = true
+		}
+	case 's':
+		position = StopPosition
+		motorRunning = false
+	case 'e':
+		return
+	}
+
+	SetServo(managePWMPin, float64(position))
+
+	for {
+
+		if motorRunning && time.Since(motorStartTime) > IgnoreSwitchTime*time.Millisecond {
+			if manageSwPin.Read() == rpio.Low {
+				position = StopPosition
+				motorRunning = false
+				fmt.Printf("end servo\n")
+				SetServo(managePWMPin, float64(position))
+				break
+			}
+		}
+
+		if motorRunning && time.Since(motorStartTime) > timeout*time.Millisecond {
+			fmt.Printf("timeout...\n")
+			position = StopPosition
+			motorRunning = false
+			SetServo(managePWMPin, float64(position))
+			break
+		}
+
+		time.Sleep(20 * time.Millisecond) // ループの遅延
+
+	}
+	youyou()
 }
